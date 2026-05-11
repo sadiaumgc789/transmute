@@ -1,16 +1,19 @@
 import os
+import shutil
 import subprocess  # nosec B404
 import sys
+import uuid
 from pathlib import Path
 from typing import Optional
 
-from core import validate_safe_path
+from core import get_file_extension, validate_safe_path
 
 from .converter_interface import ConverterInterface
 
 class CalibreConverter(ConverterInterface):
     supported_input_formats = {
         'epub',
+        'kepub',
         'mobi',
         'pdf',
         'pdf/a',
@@ -25,6 +28,7 @@ class CalibreConverter(ConverterInterface):
     }
     supported_output_formats = {
         'epub',
+        'kepub',
         'mobi',
         'pdf',
         'azw3',
@@ -75,8 +79,8 @@ class CalibreConverter(ConverterInterface):
         Returns:
             True if conversion is possible, False otherwise
         """
-        input_fmt = self.input_type.lower()
-        output_fmt = self.output_type.lower()
+        input_fmt = self.requested_input_type.lower()
+        output_fmt = self.requested_output_type.lower()
         
         # Check if formats are supported
         if input_fmt not in self.supported_input_formats or output_fmt not in self.supported_output_formats:
@@ -99,6 +103,29 @@ class CalibreConverter(ConverterInterface):
             return set()
 
         return cls.supported_output_formats - {normalized_format}
+
+    @staticmethod
+    def _get_input_stem(input_file: str) -> str:
+        filename = Path(input_file).name
+        extension = get_file_extension(filename)
+        if extension:
+            suffix = f'.{extension}'
+            if filename.lower().endswith(suffix):
+                return filename[:-len(suffix)]
+        return Path(input_file).stem
+
+    def _get_output_file(self) -> str:
+        input_stem = self._get_input_stem(self.input_file)
+        output_extension = 'kepub.epub' if self.requested_output_type.lower() == 'kepub' else self.output_type
+        return os.path.join(self.output_dir, f"{input_stem}.{output_extension}")
+
+    def _prepare_input_file(self) -> tuple[str, Optional[str]]:
+        if self.requested_input_type.lower() != 'kepub':
+            return self.input_file, None
+
+        staged_input = Path(self.input_file).parent / f"{uuid.uuid4().hex}.epub"
+        shutil.copy2(self.input_file, staged_input)
+        return str(staged_input), str(staged_input)
     
     def convert(self, overwrite: bool = True, quality: Optional[str] = None) -> list[str]:
         """
@@ -124,22 +151,26 @@ class CalibreConverter(ConverterInterface):
             raise FileNotFoundError(f"Input file not found: {self.input_file}")
         
         # Generate output filename
-        input_filename = Path(self.input_file).stem
-        output_file = os.path.join(self.output_dir, f"{input_filename}.{self.output_type}")
+        output_file = self._get_output_file()
         
         # Check if output file exists and overwrite is False
         if not overwrite and os.path.exists(output_file):
             return [output_file]
         
+        staged_input_to_cleanup = None
         try:
+            command_input_file, staged_input_to_cleanup = self._prepare_input_file()
+
             # Validate input file path
             validate_safe_path(self.input_file)
+            if staged_input_to_cleanup is not None:
+                validate_safe_path(command_input_file)
             validate_safe_path(output_file)
 
             # Build the Calibre CLI command
             cmd = [
                 self.calibre_path,
-                self.input_file,  # Input file
+                command_input_file,  # Input file
                 output_file,      # Output file
             ]
             
@@ -171,3 +202,9 @@ class CalibreConverter(ConverterInterface):
         except Exception as e:
             error_msg = f"Calibre conversion failed: {str(e)}"
             raise RuntimeError(error_msg)
+        finally:
+            if staged_input_to_cleanup is not None:
+                try:
+                    os.remove(staged_input_to_cleanup)
+                except FileNotFoundError:
+                    pass

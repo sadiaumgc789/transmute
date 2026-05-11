@@ -34,6 +34,12 @@ class FFmpegConverter(ConverterInterface):
     _decode_only_formats: set = {
         'fli',
         'flc',
+        # Sony OpenMG / ATRAC3 audio container (.oma, also .aa3).
+        # FFmpeg ships ATRAC3 decoders but no encoder in standard builds, so
+        # .oma files can be converted out to other audio formats but cannot
+        # be produced. DRM-protected OpenMG files are not supported.
+        'oma',
+        'aa3',
     }
     audio_formats: set = {
         'mp3',
@@ -52,6 +58,8 @@ class FFmpegConverter(ConverterInterface):
         # into standard FFmpeg builds (encoder amr_nb unavailable)
         'oga',
         'mka',
+        'oma',
+        'aa3',
     }
     formats_with_qualities = {
         'mp4', 'avi', 'mov', 'mkv', 'webm', 'ts', '3gp', 'ogv', 'f4v',
@@ -266,15 +274,17 @@ class FFmpegConverter(ConverterInterface):
         Returns:
             Set of compatible formats.
         """
-        if format_type.lower() in cls.audio_formats:
+        from core import media_type_aliases
+        fmt = media_type_aliases.get(format_type.lower(), format_type.lower())
+        if fmt in cls.audio_formats:
             # For audio formats, compatible formats are other audio formats
-            return cls.audio_formats - {format_type.lower()}
+            return (cls.audio_formats - cls._decode_only_formats) - {fmt}
         _animated_image_only_formats = {'apng', 'gif', 'fli', 'flc'}
-        if format_type.lower() in _animated_image_only_formats:
+        if fmt in _animated_image_only_formats:
             # Animated images have no audio stream — only video targets
-            return (cls.video_formats - cls._decode_only_formats - {format_type.lower()})
+            return (cls.video_formats - cls._decode_only_formats - {fmt})
         else:
-            return cls.supported_output_formats - {format_type.lower()}
+            return cls.supported_output_formats - {fmt}
     
     def convert(self, overwrite: bool = True, quality: Optional[str] = None) -> str:
         """

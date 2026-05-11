@@ -12,6 +12,7 @@ from pathlib import Path
 if TYPE_CHECKING:
     from db import FileDB
     
+from core.media_types import media_type_extensions
 from core.settings import get_settings
 
 
@@ -230,6 +231,9 @@ def detect_media_type(file_path: Path) -> str:
     # Use extensions as the media_type
     filename = file_path.name
     extension = get_file_extension(filename)
+    for media_type, mapped_extension in media_type_extensions.items():
+        if extension == mapped_extension:
+            return media_type
     if extension == 'pdf':
         # For PDFs, use libmagic to detect specific PDF types (e.g. PDF/A)
         media_type = detect_pdf_type(file_path)
@@ -279,6 +283,7 @@ def get_file_extension(filename: str) -> str:
         '.tar.bz2',
         '.tar.xz',
         '.tar.zst',
+        '.kepub.epub',
     }
     lower_filename = filename.lower()
     for ext in allowed_concatenated_extensions:

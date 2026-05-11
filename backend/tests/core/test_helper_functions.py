@@ -70,6 +70,12 @@ def test_detect_media_type(pytestconfig, file_data):
     file = sample_path / file_data["filename"]
     assert detect_media_type(file) == file_data["media_type"]
 
+
+def test_detect_media_type_normalizes_kepub_compound_extension(tmp_path):
+    file = tmp_path / "book.kepub.epub"
+    file.write_text("kepub fixture")
+    assert detect_media_type(file) == "kepub"
+
 @pytest.mark.parametrize("extension", [
     { "raw": ".mp4", "cleaned": "mp4" },
     { "raw": "mP4", "cleaned": "mp4" },
@@ -220,6 +226,8 @@ def test_compute_sha256_checksum_accepts_string_path(tmp_path):
     ("archive.tar.bz2", "tar.bz2"),
     ("archive.tar.xz", "tar.xz"),
     ("archive.tar.zst", "tar.zst"),
+    ("book.kepub.epub", "kepub.epub"),
+    ("BOOK.KEPUB.EPUB", "kepub.epub"),
     ("PHOTO.PNG", "png"),
     ("noext", ""),
     ("file.MP4", "mp4"),
